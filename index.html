@@ -1,101 +1,117 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Room Reservation Timetable</title>
+  <title>Room Booking Timetable</title>
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      padding: 20px;
-    }
-    table {
-      border-collapse: collapse;
-      width: 100%;
-      margin-top: 20px;
-    }
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    table { border-collapse: collapse; width: 100%; margin-top: 20px; }
     th, td {
       border: 1px solid #ccc;
       padding: 8px;
       text-align: center;
+      min-width: 100px;
     }
-    th {
-      background-color: #f4f4f4;
-    }
-    input[type="date"] {
-      padding: 5px;
-      font-size: 16px;
-    }
+    th { background-color: #f4f4f4; }
+    .confirmed { background-color: #c8e6c9; }  /* Green */
+    .pending { background-color: #fff9c4; }    /* Yellow */
+    .empty { background-color: #f9f9f9; }
   </style>
 </head>
 <body>
-  <h1>Reservation Timetable</h1>
+  <h1>Room Booking Timetable</h1>
   <label for="datePicker">Select Date:</label>
   <input type="date" id="datePicker">
 
-  <table id="reservationTable">
-    <thead>
-      <tr>
-        <th>Room Number</th>
-        <th>Student Email</th>
-        <th>Check-In</th>
-        <th>Check-Out</th>
-        <th>Time (hrs)</th>
-        <th>Status</th>
-        <th>Checked Time</th>
-        <th>Check-in Status</th>
-        <th>Dual Status</th>
-      </tr>
-    </thead>
-    <tbody></tbody>
-  </table>
+  <table id="timetable"></table>
 
   <script>
-    const apiUrl = "https://script.google.com/macros/s/AKfycbxzbUjTzZarXVcz5iZWjECjcJwLB5Y67twBFEWu8caYdvYtUJkTRp_CDRIAl5wCdFdPjQ/exec";
+    const apiUrl = "YOUR_WEB_APP_URL_HERE"; // Replace with your Apps Script web app URL
 
-    let allReservations = [];
+    let reservations = [];
 
     fetch(apiUrl)
       .then(res => res.json())
       .then(data => {
-        allReservations = data.map(entry => {
-          entry["Parsed Check-In"] = new Date(entry["Check-In"]);
-          return entry;
+        reservations = data.map(r => {
+          r.checkInDate = new Date(r["Check-In"]);
+          r.checkOutDate = new Date(r["Check-Out"]);
+          return r;
         });
-        showFilteredReservations(); // load today's data
+        showTimetable(new Date());
       });
 
-    const dateInput = document.getElementById('datePicker');
+    const dateInput = document.getElementById("datePicker");
     dateInput.valueAsDate = new Date();
-    dateInput.addEventListener('change', showFilteredReservations);
+    dateInput.addEventListener("change", () => {
+      showTimetable(new Date(dateInput.value));
+    });
 
-    function showFilteredReservations() {
-      const selectedDate = new Date(dateInput.value);
-      const tableBody = document.querySelector('#reservationTable tbody');
-      tableBody.innerHTML = '';
+    function showTimetable(selectedDate) {
+      const timetable = document.getElementById("timetable");
+      timetable.innerHTML = "";
 
-      const filtered = allReservations.filter(r => {
-        const d = r["Parsed Check-In"];
-        return d.getFullYear() === selectedDate.getFullYear() &&
-               d.getMonth() === selectedDate.getMonth() &&
-               d.getDate() === selectedDate.getDate();
+      // Setup
+      const startHour = 8;
+      const endHour = 20;
+      const hours = Array.from({ length: endHour - startHour }, (_, i) => startHour + i);
+
+      // Get unique room numbers
+      const roomNumbers = [...new Set(reservations.map(r => r["Room Number"]))].sort((a, b) => a - b);
+
+      // Header row
+      const thead = document.createElement("thead");
+      const headRow = document.createElement("tr");
+      headRow.appendChild(document.createElement("th")).innerText = "Time";
+      roomNumbers.forEach(room => {
+        const th = document.createElement("th");
+        th.innerText = `Room ${room}`;
+        headRow.appendChild(th);
+      });
+      thead.appendChild(headRow);
+      timetable.appendChild(thead);
+
+      // Table body
+      const tbody = document.createElement("tbody");
+      hours.forEach(hour => {
+        const row = document.createElement("tr");
+        const timeCell = document.createElement("td");
+        timeCell.innerText = `${String(hour).padStart(2, '0')}:00`;
+        row.appendChild(timeCell);
+
+        roomNumbers.forEach(room => {
+          const cell = document.createElement("td");
+          const res = reservations.find(r => {
+            const start = r.checkInDate;
+            const end = r.checkOutDate;
+            const sameDay =
+              start.getDate() === selectedDate.getDate() &&
+              start.getMonth() === selectedDate.getMonth() &&
+              start.getFullYear() === selectedDate.getFullYear();
+            return (
+              r["Room Number"] == room &&
+              sameDay &&
+              hour >= start.getHours() &&
+              hour < end.getHours()
+            );
+          });
+
+          if (res) {
+            const status = res["Status"];
+            cell.innerText = res["Student Email"];
+            cell.className = status === "Confirmed" ? "confirmed" :
+                             status === "Pending Approval" ? "pending" : "empty";
+          } else {
+            cell.innerText = "";
+            cell.className = "empty";
+          }
+
+          row.appendChild(cell);
+        });
+
+        tbody.appendChild(row);
       });
 
-      if (filtered.length === 0) {
-        tableBody.innerHTML = `<tr><td colspan="9">No reservations for this date.</td></tr>`;
-        return;
-      }
-
-      for (const row of filtered) {
-        const tr = document.createElement('tr');
-        [
-          "Room Number", "Student Email", "Check-In", "Check-Out",
-          "Time", "Status", "Checked Time", "Check-in Status", "Dual Status"
-        ].forEach(key => {
-          const td = document.createElement('td');
-          td.textContent = row[key] || '';
-          tr.appendChild(td);
-        });
-        tableBody.appendChild(tr);
-      }
+      timetable.appendChild(tbody);
     }
   </script>
 </body>
